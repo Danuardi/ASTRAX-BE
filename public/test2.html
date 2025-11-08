@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Phantom Sign Test</title>
+</head>
+<body>
+  <h3>Phantom Sign Test</h3>
+  <div>
+    <button id="connectBtn">Connect Phantom</button>
+    <button id="signBtn" disabled>Sign Server Nonce & Request Token</button>
+  </div>
+  <div>Status: <span id="status">Disconnected</span></div>
+  <pre id="output" style="white-space:pre-wrap;border:1px solid #ddd;padding:12px;margin-top:12px;max-width:900px;"></pre>
+
+  <script>
+    const out = (v) => { 
+      document.getElementById('output').textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+    };
+    
+    const setStatus = (s) => {
+      document.getElementById('status').textContent = s;
+    };
+
+    function getProvider() {
+      if (window?.phantom?.solana?.isPhantom) {
+        return window.phantom.solana;
+      }
+      if (window?.solana?.isPhantom) {
+        return window.solana;
+      }
+      return null;
+    }
+
+    async function connectWallet() {
+      const provider = getProvider();
+      if (!provider) {
+        setStatus('Phantom not found');
+        return out('Phantom wallet not found. Install from https://phantom.app/');
+      }
+
+      try {
+        // Clear any existing state
+        localStorage.clear();
+        
+        const resp = await provider.connect();
+        const pk = provider.publicKey?.toString() || resp.publicKey?.toString();
+        
+        setStatus('Connected: ' + pk);
+        out({ connected: true, publicKey: pk });
+        document.getElementById('signBtn').disabled = false;
+      } catch (err) {
+        setStatus('Connection failed');
+        out({ error: err?.message || String(err) });
+      }
+    }
+
+    async function signAndRequestToken() {
+      setStatus('Starting authentication...');
+      const provider = getProvider();
+      if (!provider) {
+        setStatus('Phantom not found');
+        return out('Phantom wallet not found.');
+      }
+
+      try {
+        const publicKey = provider.publicKey?.toString();
+        if (!publicKey) {
+          setStatus('No public key');
+          return out('No publicKey from provider. Connect first.');
+        }
+
+        // Step 1: Get nonce
+        setStatus('Requesting nonce...');
+        const nonceResp = await fetch('/api/v1/auth/nonce', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicKey })
+        });
+
+        const nonceText = await nonceResp.text();
+        console.log('Nonce response:', nonceText);
+
+        if (!nonceResp.ok) {
+          setStatus('Nonce request failed');
+          return out({
+            error: 'Failed to get nonce',
+            status: nonceResp.status,
+            response: nonceText
+          });
+        }
+
+        const nonceData = JSON.parse(nonceText);
+        const messageToSign = nonceData.message;
+        
+        if (!messageToSign) {
+          setStatus('Invalid nonce response');
+          return out({
+            error: 'Invalid nonce response',
+            response: nonceData
+          });
+        }
+
+        // Step 2: Sign the message
+        setStatus('Signing message...');
+        const messageBytes = new TextEncoder().encode(messageToSign);
+        const signedData = await provider.signMessage(messageBytes, 'utf8');
+        
+        // Convert signature to base64
+        const signature = btoa(
+          Array.from(
+            new Uint8Array(
+              signedData.signature || signedData
+            )
+          ).map(b => String.fromCharCode(b)).join('')
+        );
+
+        // Step 3: Verify signature
+        setStatus('Verifying signature...');
+        const verifyResp = await fetch('/api/v1/auth/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            publicKey,
+            signature,
+            message: messageToSign
+          })
+        });
+
+        const verifyText = await verifyResp.text();
+        console.log('Verify response:', verifyText);
+
+        if (!verifyResp.ok) {
+          setStatus('Verification failed');
+          return out({
+            error: 'Verification failed',
+            status: verifyResp.status,
+            response: verifyText
+          });
+        }
+
+        const verifyData = JSON.parse(verifyText);
+        
+        // Store tokens
+        if (verifyData.token) localStorage.setItem('accessToken', verifyData.token);
+        if (verifyData.refreshToken) localStorage.setItem('refreshToken', verifyData.refreshToken);
+
+        setStatus('Authentication successful!');
+        out({
+          success: true,
+          data: verifyData,
+          tokensStored: {
+            access: !!localStorage.getItem('accessToken'),
+            refresh: !!localStorage.getItem('refreshToken')
+          }
+        });
+
+      } catch (err) {
+        setStatus('Error: ' + (err.message || 'Unknown error'));
+        out({
+          error: 'Authentication failed',
+          details: err?.message || String(err),
+          stack: err?.stack
+        });
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      // Add button handlers
+      document.getElementById('connectBtn').addEventListener('click', connectWallet);
+      document.getElementById('signBtn').addEventListener('click', signAndRequestToken);
+      
+      // Check if Phantom is installed
+      const provider = getProvider();
+      if (!provider) {
+        setStatus('Phantom not installed');
+        out('Please install Phantom wallet from https://phantom.app/');
+      } else {
+        setStatus('Ready to connect');
+      }
+    });
+  </script>
+</body>
+</html>

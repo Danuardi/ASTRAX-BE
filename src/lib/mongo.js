@@ -1,11 +1,16 @@
 const mongoose = require('mongoose');
 const logger = require('./logger');
-const { mongoUri } = require('../config/env');
+const { mongoUri, mongoDbName } = require('../config/env');
 
 async function connectMongo() {
 	const uri = mongoUri;
-	await mongoose.connect(uri, { dbName: process.env.MONGO_DB || undefined });
-	logger.info('Connected to MongoDB');
+	try {
+		await mongoose.connect(uri, { dbName: mongoDbName || undefined });
+		logger.info('Connected to MongoDB');
+	} catch (err) {
+		logger.error('MongoDB connection failed', err);
+		throw err;
+	}
 }
 
 module.exports = { connectMongo };

@@ -13,8 +13,8 @@ app.use(express.json());
 // serve static test files (e.g. public/test.html)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// mount API
-app.use('/api', api);
+// mount API v1
+app.use('/api/v1', api);
 
 // health
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

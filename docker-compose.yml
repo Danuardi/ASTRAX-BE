@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    image: astra-backend:latest
+    ports:
+      - "${HOST_PORT:-3000}:${PORT:-3000}"
+    # Load environment variables from .env into the container. This preserves
+    # any nested placeholders (e.g. MONGODB_URI that contains ${MONGO_PASS}) so
+    # they can be expanded at runtime by the app's env logic.
+    env_file:
+      - ./.env
+    environment:
+      # Do not attempt to substitute MONGODB_URI at compose parse time; allow
+      # the container to receive both MONGODB_URI and MONGO_PASS from env_file.
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-astra-backend}
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+    restart: unless-stopped
+

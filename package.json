@@ -5,14 +5,22 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "lint": "echo \"no lint configured\""
+    "lint": "echo \"no lint configured\"",
+    "test-redis": "node scripts/test-redis.js",
+    "preflight": "node scripts/test-preflight.js",
+    "prestart": "npm run preflight",
+    "docker:build": "docker build -t astra-backend .",
+    "docker:up": "docker-compose up --build -d",
+    "docker:down": "docker-compose down"
   },
   "dependencies": {
     "@solana/web3.js": "^1.78.0",
+    "@upstash/redis": "^1.35.6",
     "bs58": "^5.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^7.5.0",
     "tweetnacl": "^1.0.3"

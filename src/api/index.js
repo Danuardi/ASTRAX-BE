@@ -4,6 +4,7 @@ const router = express.Router();
 // mount sub-routers
 router.use('/auth', require('./auth'));
 router.use('/wallet', require('./wallet'));
+router.use('/agent', require('./agent'));
 router.use('/test', require('./test'));
 
 // health passthrough

@@ -1,0 +1,71 @@
+const queue = require('../../../../src/lib/queue');
+const redis = require('../../../../src/lib/redis');
+const metrics = require('../../../../src/lib/metrics');
+
+// POST /api/agent/rebalance
+// Body: { /* arbitrary payload for the agent to act on */ }
+async function requestRebalance(req, res) {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Check rate limit (10 requests per minute per user)
+    const rateLimited = !(await metrics.checkRateLimit(user._id, 10, 60));
+    if (rateLimited) {
+      return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
+    }
+
+    const payload = req.body || {};
+    const startTime = Date.now();
+    const now = new Date().toISOString();
+
+    const jobPayload = {
+      user: { publicKey: user.publicKey, id: user._id },
+      payload,
+      type: 'rebalance',
+      priority: payload.priority || 'normal',
+      requestMetadata: {
+        clientIp: req.ip,
+        userAgent: req.headers['user-agent'],
+        timestamp: startTime
+      }
+    };
+
+    const queueKey = 'agent:rebalance:request';
+    const jobId = await queue.enqueue(queueKey, jobPayload);
+
+    // Persist job metadata (TTL 24h)
+    const jobKey = `agent:rebalance:job:${jobId}`;
+    await redis.set(jobKey, jobPayload, 24 * 60 * 60);
+
+    // Record metrics
+    await metrics.incrementCounter('jobs');
+    await metrics.recordJobTiming(jobId, startTime);
+
+    return res.status(202).json({ ok: true, jobId });
+  } catch (err) {
+    console.error('requestRebalance error', err);
+    // Record failure
+    const jobId = err.jobId || `error-${Date.now()}`;
+    await metrics.recordFailedJob(jobId, err, req.body);
+    return res.status(500).json({ error: 'internal' });
+  }
+}
+
+// GET /api/agent/rebalance/metrics
+// Returns metrics summary for monitoring
+async function getMetrics(req, res) {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const summary = await metrics.getMetricsSummary(days);
+    return res.json(summary);
+  } catch (err) {
+    console.error('getMetrics error', err);
+    return res.status(500).json({ error: 'Failed to fetch metrics' });
+  }
+}
+
+module.exports = { 
+  requestRebalance,
+  getMetrics,
+};
